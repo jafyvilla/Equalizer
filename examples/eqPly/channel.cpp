@@ -73,6 +73,12 @@ bool Channel::configInit( const eq::uint128_t& initID )
     setNearFar( 0.1f, 10.0f );
     _model = 0;
     _modelID = co::base::UUID::ZERO;
+
+    ConfigEvent event;
+    event.data.originator = getPipe()->getID();
+    event.data.type = ConfigEvent::PIPE;
+
+    getConfig()->sendEvent( event );
     return true;
 }
 
@@ -130,6 +136,26 @@ void Channel::frameDraw( const eq::uint128_t& frameID )
     if( _isDone( ))
         return;
 
+#ifdef BENCHMARK
+    Pipe* pipe = static_cast< Pipe* >( getPipe( ));
+    FrameData& frameData = pipe->getFrameData();
+
+    frameData.moveCamera( -.5f, -.5f, 0.f );
+    _frameDraw( frameID );
+    frameData.moveCamera( 1.f, 0.f, 0.f );
+    _frameDraw( frameID );
+    frameData.moveCamera( 0.f, 1.f, 0.f );
+    _frameDraw( frameID );
+    frameData.moveCamera( -1.f, 0.f, 0.f );
+    _frameDraw( frameID );
+    frameData.moveCamera( 0.f, -1.f, 0.f );
+#else
+    _frameDraw( frameID );
+#endif
+}
+
+void Channel::_frameDraw( const eq::uint128_t& frameID )
+{
     Window* window = static_cast< Window* >( getWindow( ));
     VertexBufferState& state = window->getState();
     const Model* oldModel = _model;

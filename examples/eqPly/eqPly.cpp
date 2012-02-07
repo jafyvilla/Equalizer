@@ -124,6 +124,11 @@ int EqPly::run()
     uint32_t maxFrames = _initData.getMaxFrames();
     int lastFrame = 0;
     
+#ifdef BENCHMARK
+    std::ofstream outputFrameFile;
+    outputFrameFile.open( "FPS.eqPly.txt" );
+#endif
+
     clock.reset();
     while( config->isRunning( ) && maxFrames-- )
     {
@@ -140,8 +145,12 @@ int EqPly::run()
             lastFrame = config->getFinishedFrame();
 
             EQLOG( LOG_STATS ) << time << " ms for " << nFrames << " frames @ "
-                               << ( nFrames / time * 1000.f) << " FPS)"
-                               << std::endl;
+                               << ( nFrames / time * 1000.f) << " FPS using "
+                               << config->getNPipes() << " GPUs" << std::endl;
+#ifdef BENCHMARK
+            outputFrameFile << config->getNPipes() << ", "
+                            << nFrames / time * 1000.f << std::endl;
+#endif
         }
 
         while( !config->needRedraw( )) // wait for an event requiring redraw
@@ -160,11 +169,16 @@ int EqPly::run()
         }
         config->handleEvents(); // process all pending events
     }
+#ifdef BENCHMARK
+    outputFrameFile.close();
+#endif
+
     const uint32_t frame = config->finishAllFrames();
     const float time = clock.resetTimef();
     const size_t nFrames = frame - lastFrame;
     EQLOG( LOG_STATS ) << time << " ms for " << nFrames << " frames @ "
-                       << ( nFrames / time * 1000.f) << " FPS)" << std::endl;
+                       << ( nFrames / time * 1000.f) << " FPS using "
+                       << config->getNPipes() << " GPUs" << std::endl;
 
     // 5. exit config
     clock.reset();

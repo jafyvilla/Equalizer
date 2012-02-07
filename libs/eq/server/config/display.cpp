@@ -16,6 +16,7 @@
  */
 
 #include "display.h"
+#include "resources.h"
 
 #include "resources.h"
 #include "../canvas.h"
@@ -50,7 +51,7 @@ void Display::discoverLocal( Config* config )
 
     Pipe* pipe = pipes.front();
     Window* window = new Window( pipe );
-    window->setViewport( Viewport( .25f, .2f, .5f, .5f ));
+    window->setViewport( Viewport( .0f, .0f, 1.f, 1.f ));
     window->setName( pipe->getName() + " window" );
     window->setIAttribute( Window::IATTR_PLANES_STENCIL, 1 );
 

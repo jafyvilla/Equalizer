@@ -1,6 +1,6 @@
 
 /* Copyright (c)      2010, Cedric Stalder <cedric.stalder@gmail.com>
- *               2010-2011, Stefan Eilemann <eile@eyescale.ch>
+ *               2010-2012, Stefan Eilemann <eile@eyescale.ch>
  *
  * This library is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License version 2.1 as published
@@ -141,22 +141,52 @@ bool GPUCompressor::initUploader( const uint32_t externalFormat,
     return true;
 }
 
-void GPUCompressor::download( const fabric::PixelViewport& pvpIn,
-                              const unsigned source, const uint64_t flags,
-                              fabric::PixelViewport& pvpOut,
-                              void** out )
+bool GPUCompressor::startDownload( const fabric::PixelViewport& pvpIn,
+                                   const unsigned source, const uint64_t flags,
+                                   fabric::PixelViewport& pvpOut, void** out )
 {
     EQASSERT( _plugin );
     EQASSERT( _glewContext );
 
     const uint64_t inDims[4] = { pvpIn.x, pvpIn.w, pvpIn.y, pvpIn.h }; 
+
+    if( _info->capabilities & EQ_COMPRESSOR_USE_ASYNC_DOWNLOAD )
+    {
+        _plugin->startDownload( _instance, _name, _glewContext, inDims, source,
+                                flags | EQ_COMPRESSOR_USE_ASYNC_DOWNLOAD );
+        return true;
+    }
+
     uint64_t outDims[4] = { 0, 0, 0, 0 };
-    _plugin->download( _instance, _name, _glewContext,
-                       inDims, source, flags, outDims, out );
+    _plugin->download( _instance, _name, _glewContext, inDims, source, flags,
+                       outDims, out );
     pvpOut.x = outDims[0];
     pvpOut.w = outDims[1];
     pvpOut.y = outDims[2];
     pvpOut.h = outDims[3];
+    return false;
+}
+
+
+void GPUCompressor::finishDownload( const fabric::PixelViewport& pvpIn,
+                                    const uint64_t flags,
+                                    fabric::PixelViewport& pvpOut, void** out )
+{
+    EQASSERT( _plugin );
+    EQASSERT( _glewContext );
+
+    if( _info->capabilities & EQ_COMPRESSOR_USE_ASYNC_DOWNLOAD )
+    {
+        const uint64_t inDims[4] = { pvpIn.x, pvpIn.w, pvpIn.y, pvpIn.h }; 
+        uint64_t outDims[4] = { 0, 0, 0, 0 };
+        _plugin->finishDownload( _instance, _name, _glewContext, inDims,
+                                 flags | EQ_COMPRESSOR_USE_ASYNC_DOWNLOAD,
+                                 outDims, out );
+        pvpOut.x = outDims[0];
+        pvpOut.w = outDims[1];
+        pvpOut.y = outDims[2];
+        pvpOut.h = outDims[3];
+    }
 }
 
 void GPUCompressor::upload( const void*                  buffer,

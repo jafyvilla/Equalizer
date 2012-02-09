@@ -131,6 +131,7 @@ namespace fabric
         CMD_PIPE_FRAME_DRAW_FINISH,
         CMD_PIPE_FRAME_START_CLOCK,
         CMD_PIPE_EXIT_THREAD,
+        CMD_PIPE_EXIT_ASYNC_RB_THREAD,
         CMD_PIPE_DETACH_VIEW,
         CMD_PIPE_CUSTOM = 30 // some buffer for binary-compatible patches
     };
@@ -173,11 +174,13 @@ namespace fabric
         CMD_CHANNEL_FRAME_READBACK,
         CMD_CHANNEL_FRAME_TRANSMIT_IMAGE,
         CMD_CHANNEL_FRAME_SET_READY,
+        CMD_CHANNEL_FRAME_SET_READY_NODE,
         CMD_CHANNEL_FRAME_VIEW_START,
         CMD_CHANNEL_FRAME_VIEW_FINISH,
         CMD_CHANNEL_STOP_FRAME,
         CMD_CHANNEL_FRAME_TILES,
-        CMD_CHANNEL_CUSTOM = 30 // some buffer for binary-compatible patches
+        CMD_CHANNEL_FINISH_READBACK,
+        CMD_CHANNEL_CUSTOM = 40 // some buffer for binary-compatible patches
     };
 
     enum CanvasCommand

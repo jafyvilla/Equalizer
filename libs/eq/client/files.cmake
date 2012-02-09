@@ -95,6 +95,8 @@ set(CLIENT_HEADERS
   )
 
 set(CLIENT_SOURCES
+  asyncRB/asyncRBThread.h
+  asyncRB/asyncRBThread.cpp
   detail/channel.ipp
   canvas.cpp
   channel.cpp
@@ -149,6 +151,8 @@ if(EQ_AGL_USED)
     agl/window.cpp
     agl/pipe.cpp
     agl/windowSystem.cpp
+    asyncRB/aglWindowShared.h
+    asyncRB/aglWindowShared.cpp
   )
   list(APPEND CLIENT_SOURCES ${AGL_SOURCES})
 endif(EQ_AGL_USED)
@@ -161,6 +165,7 @@ if(EQ_GLX_USED)
     glx/window.cpp
     glx/windowSystem.cpp
     glXTypes.cpp
+    asyncRB/glXWindowShared.h
   )
   list(APPEND CLIENT_SOURCES ${GLX_SOURCES})
 endif(EQ_GLX_USED)

@@ -1,5 +1,5 @@
 
-/* Copyright (c) 2006-2011, Stefan Eilemann <eile@equalizergraphics.com>
+/* Copyright (c) 2006-2012, Stefan Eilemann <eile@equalizergraphics.com>
  *                    2010, Cedric Stalder <cedric.stalder@gmail.com>
  *
  * This library is free software; you can redistribute it and/or modify it under
@@ -190,6 +190,22 @@ namespace eq
             { return _getAttachment( buffer ).memory.state == Memory::VALID; }
 
         /**
+         * @return true if the image has valid pixel data for either of buffers.
+         */
+        bool hasPixelData() const
+            { return hasPixelData( Frame::BUFFER_COLOR ) ||
+                     hasPixelData( Frame::BUFFER_DEPTH ); }
+
+        /** @return true if async readback for a buffer is in progress. */
+        bool hasAsyncReadback( const Frame::Buffer buffer ) const
+            { return _getAttachment(buffer).memory.state == Memory::DOWNLOAD; }
+
+        /**@return true if async readback was started but not finished. */
+        bool hasAsyncReadback() const
+            { return hasAsyncReadback( Frame::BUFFER_COLOR ) ||
+                     hasAsyncReadback( Frame::BUFFER_DEPTH ); }
+
+        /**
          * Clear and validate an image buffer.
          *
          * RGBA and BGRA buffers are initialized with (0,0,0,255).
@@ -261,6 +277,7 @@ namespace eq
 
         /** @name Operations */
         //@{
+#ifndef EQ_2_0_API
         /**
          * Read back an image from the frame buffer.
          *
@@ -270,25 +287,40 @@ namespace eq
          * @param glObjects the GL object manager for the current GL context.
          * @return true when data was read back, false on error.
          * @version 1.0
+         * @deprecated @sa startReadback(), finishReadback()
          */
         EQ_API bool readback( const uint32_t buffers, const PixelViewport& pvp,
-                              const Zoom& zoom,
-                              util::ObjectManager< const void* >* glObjects );
+                              const Zoom& zoom, ObjectManager* glObjects );
+#endif
 
         /**
-         * @internal
-         * Read back an image from a given texture.
+         * Start reading back an image from the frame buffer.
          *
-         * If no texture is provided, the readback is performed from the
-         * framebuffer.
-         *
-         * @param buffer the buffer type.
-         * @param texture the OpenGL texture name.
-         * @param glewContext function table for the current GL context.
-         * @return true when data was read back, false on error.
+         * @param buffers bit-wise combination of the Frame::Buffer components.
+         * @param pvp the area of the frame buffer wrt the drawable.
+         * @param zoom the scale factor to apply during readback.
+         * @param glObjects the GL object manager for the current GL context.
+         * @return true when the operation requires a finishReadback().
+         * @version 1.3
          */
-        bool readback( const Frame::Buffer buffer, const util::Texture* texture,
-                       const GLEWContext* glewContext );
+        EQ_API bool startReadback( const uint32_t buffers,
+                                   const PixelViewport& pvp, const Zoom& zoom,
+                                   ObjectManager* glObjects );
+
+        /** @internal Start reading back data from a texture. */ 
+        bool startReadback( const Frame::Buffer buffer,
+                            const util::Texture* texture,
+                            const GLEWContext* glewContext );
+
+        /** 
+         * Finish an asynchronous readback.
+         * 
+         * @param zoom the scale factor to apply during readback.
+         * @param glObjects the GL object manager for the current GL context.
+         * @version 1.3
+         */
+        EQ_API void finishReadback( const Zoom& zoom,
+                                    const GLEWContext* glewContext );
 
         /**
          * Upload this image to the frame buffer or a texture.
@@ -306,7 +338,7 @@ namespace eq
          */
         EQ_API void upload( const Frame::Buffer buffer, util::Texture* texture,
                             const Vector2i& position,
-                            util::ObjectManager< const void* >* glObjects )
+                            ObjectManager* glObjects )
             const;
 
         /** Write the pixel data as rgb image file. @version 1.0 */
@@ -368,13 +400,14 @@ namespace eq
             Memory() : state( INVALID ) {}
 
             void resize( const uint32_t size );
-            void flush();            
+            void flush();
             void useLocalBuffer();
 
             enum State
             {
                 INVALID,
-                VALID
+                VALID,
+                DOWNLOAD // async RB is in progress
             };
 
             State state;   //!< The current state of the memory
@@ -463,9 +496,16 @@ namespace eq
                                  const bool hasAlpha );
 
         bool _readback( const Frame::Buffer buffer, const Zoom& zoom,
-                        util::ObjectManager< const void* >* glObjects );
-        bool _readbackZoom( const Frame::Buffer buffer, const Zoom& zoom,
-                            util::ObjectManager< const void* >* glObjects );
+                        ObjectManager* glObjects );
+
+        bool _startReadback( const Frame::Buffer buffer, const Zoom& zoom,
+                             ObjectManager* glObjects );
+
+        void _finishReadback( const Frame::Buffer buffer, const Zoom& zoom,
+                              const GLEWContext* glewContext );
+
+        const util::Texture* _readbackZoom( const Frame::Buffer buffer,
+                        const Zoom& zoom, ObjectManager* glObjects );
     };
 };
 #endif // EQ_IMAGE_H

@@ -1,5 +1,5 @@
 
-/* Copyright (c) 2006-2011, Stefan Eilemann <eile@equalizergraphics.com>
+/* Copyright (c) 2006-2012, Stefan Eilemann <eile@equalizergraphics.com>
  *                    2010, Cedric Stalder <cedric.stalder@gmail.com>
  *
  * This library is free software; you can redistribute it and/or modify it under
@@ -27,6 +27,7 @@
 #include "roiFinder.h"
 
 #include <eq/fabric/drawableConfig.h>
+#include <eq/util/objectManager.h>
 #include <co/command.h>
 #include <co/commandFunc.h>
 #include <co/connectionDescription.h>
@@ -227,31 +228,39 @@ Image* FrameData::_allocImage( const eq::Frame::Type type,
     return image;
 }
 
+#ifndef EQ_2_0_API
 void FrameData::readback( const Frame& frame,
-                          util::ObjectManager< const void* >* glObjects,
+                          ObjectManager* glObjects,
                           const DrawableConfig& config )
 {
-    readback( frame, glObjects, config, PixelViewports( 1, getPixelViewport( )));
-}
+    const Images& images = startReadback( frame, glObjects, config,
+                                        PixelViewports( 1, getPixelViewport( )));
 
-void FrameData::readback( const Frame& frame,
-                          util::ObjectManager< const void* >* glObjects,
-                          const DrawableConfig& config,
-                          const PixelViewports& regions )
+    for( ImagesCIter i = images.begin(); i != images.end(); ++i )
+        (*i)->finishReadback( frame.getZoom(), glObjects->glewGetContext( ));
+}
+#endif
+
+Images FrameData::startReadback( const Frame& frame,
+                                 ObjectManager* glObjects,
+                                 const DrawableConfig& config,
+                                 const PixelViewports& regions )
 {
+    Images images;
+
     if( _data.buffers == Frame::BUFFER_NONE )
-        return;
+        return images;
 
     const eq::PixelViewport& framePVP = getPixelViewport();
     const PixelViewport      absPVP   = framePVP + frame.getOffset();
     if( !absPVP.isValid( ))
-        return;
+        return images;
 
     const Zoom& zoom = frame.getZoom();
     if( !zoom.isValid( ))
     {
         EQWARN << "Invalid zoom factor, skipping frame" << std::endl;
-        return;
+        return images;
     }
 
 // TODO: issue #85: move automatic ROI detection to eq::Channel
@@ -260,7 +269,7 @@ void FrameData::readback( const Frame& frame,
     if( _data.buffers & Frame::BUFFER_DEPTH && zoom == Zoom::NONE )
         pvps = _roiFinder->findRegions( _data.buffers, absPVP, zoom,
 //                    frame.getAssemblyStage(), frame.getFrameID(), glObjects );
-                    0, 0, glObjects );
+                                        0, 0, glObjects );
     else
         pvps.push_back( absPVP );
 #endif
@@ -269,15 +278,18 @@ void FrameData::readback( const Frame& frame,
     if( getType() == eq::Frame::TYPE_TEXTURE )
     {
         Image* image = newImage( getType(), config );
-        image->readback( getBuffers(), absPVP, zoom, glObjects );
+        if( image->startReadback( getBuffers(), absPVP, zoom, glObjects ))
+            images.push_back( image );
         image->setOffset( 0, 0 );
-        return;
+        return images;
     }
-    // else read the given regions
+
+    //else read only required regions
     EQASSERT( getType() == eq::Frame::TYPE_MEMORY );
 
     const eq::Pixel& pixel = getPixel();
-    for( size_t i = 0; i < regions.size(); ++i )
+
+    for( uint32_t i = 0; i < regions.size(); ++i )
     {
         PixelViewport pvp = regions[ i ] + frame.getOffset();
         pvp.intersect( absPVP );
@@ -285,23 +297,14 @@ void FrameData::readback( const Frame& frame,
             continue;
 
         Image* image = newImage( getType(), config );
-        image->readback( getBuffers(), pvp, zoom, glObjects );
+        if( image->startReadback( getBuffers(), pvp, zoom, glObjects ))
+            images.push_back( image );
 
         pvp -= frame.getOffset();
         image->setOffset( (pvp.x - framePVP.x) * pixel.w,
                           (pvp.y - framePVP.y) * pixel.h );
-#ifndef NDEBUG
-        if( getenv( "EQ_DUMP_IMAGES" ))
-        {
-            static co::base::a_int32_t counter;
-            std::ostringstream stringstream;
-
-            stringstream << "Image_" << std::setfill( '0' ) << std::setw(5)
-                         << ++counter;
-            image->writeImages( stringstream.str( ));
-        }
-#endif
     }
+    return images;
 }
 
 void FrameData::setVersion( const uint64_t version )

@@ -59,7 +59,7 @@ Config* Server::configure( ServerPtr server, const std::string& session,
         server->addListener( desc );
     }
 
-    Display::discoverLocal( config );
+    Display::discoverLocal( config, flags );
     const Compounds compounds = Loader::addOutputCompounds( server );
     if( compounds.empty( ))
     {
@@ -121,7 +121,7 @@ static void _setNetwork( const Config* config, const co::ConnectionType type,
 
         co::ConnectionDescriptionPtr desc = descriptions.front();
         desc->type = type;
-        desc->bandwidth = 300000; // To disable compressor
+        //desc->bandwidth = 300000; // To disable compressor
 
         const std::string& hostname = node->getHost();        
         if( hostname.empty( )) // appNode!?

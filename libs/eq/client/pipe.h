@@ -1,5 +1,5 @@
 
-/* Copyright (c) 2005-2011, Stefan Eilemann <eile@equalizergraphics.com>
+/* Copyright (c) 2005-2012, Stefan Eilemann <eile@equalizergraphics.com>
  *                    2010, Cedric Stalder <cedric.stalder@gmail.com> 
  *
  * This library is free software; you can redistribute it and/or modify it under
@@ -34,6 +34,8 @@
 
 namespace eq
 {
+namespace detail { class AsyncRBThread; }
+
     /**
      * A Pipe represents a graphics card (GPU) on a Node.
      *
@@ -58,6 +60,9 @@ namespace eq
         EQ_API co::CommandQueue* getPipeThreadQueue(); //!< @internal
         co::CommandQueue* getMainThreadQueue(); //!< @internal
         co::CommandQueue* getCommandThreadQueue(); //!< @internal
+        co::CommandQueue* getAsyncRBThreadQueue(); //!< @internal
+        const GLEWContext* getAsyncGlewContext(); //!< @internal
+
 
         /** @return the parent configuration. @version 1.0 */
         EQ_API Config* getConfig();
@@ -89,7 +94,7 @@ namespace eq
          * @return the current frame number.
          * @version 1.0
          */ 
-        uint32_t getCurrentFrame()  const { return _currentFrame; }
+        EQ_API uint32_t getCurrentFrame() const;
         EQ_API uint32_t getFinishedFrame() const; //!< @internal
 
         /**
@@ -172,6 +177,9 @@ namespace eq
         void exitThread();
 
         void cancelThread(); //!< @internal
+
+        /** @internal Start the async readback thread. */
+        bool startAsyncRBThread();
 
         /** 
          * @name Interface to and from the SystemPipe, the window-system
@@ -426,6 +434,8 @@ namespace eq
         class Thread;
         Thread* _thread;
 
+        detail::AsyncRBThread* const _asyncRBThread;
+
         /** The last window made current. */
         const mutable Window* _currentWindow;
 
@@ -441,6 +451,8 @@ namespace eq
         void _exitCommandQueue();
 
         friend class Window;
+
+        void _stopAsyncRBThread();
 
         /** @internal Release the views not used for some revisions. */
         void _releaseViews();
@@ -462,6 +474,7 @@ namespace eq
         bool _cmdFrameDrawFinish( co::Command& command );
         bool _cmdExitThread( co::Command& command );
         bool _cmdDetachView( co::Command& command );
+        bool _cmdExitAsyncRBThread( co::Command& command );
 
         EQ_TS_VAR( _pipeThread );
     };

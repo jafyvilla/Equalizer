@@ -1,5 +1,5 @@
 
-/* Copyright (c) 2005-2011, Stefan Eilemann <eile@equalizergraphics.com>
+/* Copyright (c) 2005-2012, Stefan Eilemann <eile@equalizergraphics.com>
  *                    2010, Cedric Stalder<cedric.stalder@gmail.com>
  *
  * This library is free software; you can redistribute it and/or modify it under
@@ -34,6 +34,7 @@
 #include "view.h"
 #include "window.h"
 #include "windowPackets.h"
+#include "asyncRB/asyncRBThread.h"
 
 #include "messagePump.h"
 #include "systemPipe.h"
@@ -48,6 +49,7 @@
 #include <eq/fabric/task.h>
 #include <co/command.h>
 #include <co/queueSlave.h>
+#include <co/base/sleep.h>
 #include <sstream>
 
 namespace eq
@@ -84,6 +86,7 @@ Pipe::Pipe( Node* parent )
         , _currentFrame( 0 )
         , _frameTime( 0 )
         , _thread( 0 )
+        , _asyncRBThread( new detail::AsyncRBThread( ))
         , _currentWindow( 0 )
         , _computeContext( 0 )
 {
@@ -94,6 +97,8 @@ Pipe::~Pipe()
     EQASSERT( getWindows().empty( ));
     delete _thread;
     _thread = 0;
+
+    delete _asyncRBThread;
 }
 
 Config* Pipe::getConfig()
@@ -129,6 +134,7 @@ void Pipe::attach( const co::base::UUID& id, const uint32_t instanceID )
     Super::attach( id, instanceID );
     
     co::CommandQueue* queue = getPipeThreadQueue();
+    co::CommandQueue* readbackQ = getAsyncRBThreadQueue();
 
     registerCommand( fabric::CMD_PIPE_CONFIG_INIT, 
                      PipeFunc( this, &Pipe::_cmdConfigInit ), queue );
@@ -150,6 +156,8 @@ void Pipe::attach( const co::base::UUID& id, const uint32_t instanceID )
                      PipeFunc( this, &Pipe::_cmdExitThread ), queue );
     registerCommand( fabric::CMD_PIPE_DETACH_VIEW,
                      PipeFunc( this, &Pipe::_cmdDetachView ), queue );
+    registerCommand( fabric::CMD_PIPE_EXIT_ASYNC_RB_THREAD,
+                     PipeFunc( this, &Pipe::_cmdExitAsyncRBThread ), readbackQ );
 }
 
 void Pipe::setDirty( const uint64_t bits )
@@ -263,6 +271,11 @@ co::CommandQueue* Pipe::getPipeThreadQueue()
         return _thread->getWorkerQueue();
 
     return getNode()->getMainThreadQueue();
+}
+
+co::CommandQueue* Pipe::getAsyncRBThreadQueue()
+{
+    return _asyncRBThread->getWorkerQueue();
 }
 
 co::CommandQueue* Pipe::getMainThreadQueue()
@@ -469,8 +482,18 @@ void Pipe::startThread()
     _thread->start();
 }
 
+const GLEWContext* Pipe::getAsyncGlewContext()
+{
+    if( startAsyncRBThread( ))
+        return _asyncRBThread->glewGetContext();
+
+    return 0;
+}
+
 void Pipe::exitThread()
 {
+    _stopAsyncRBThread();
+
     if( !_thread )
         return;
 
@@ -484,6 +507,8 @@ void Pipe::exitThread()
 
 void Pipe::cancelThread()
 {
+    _stopAsyncRBThread();
+
     if( !_thread )
         return;
 
@@ -525,6 +550,12 @@ void Pipe::waitFrameFinished( const uint32_t frameNumber ) const
 void Pipe::waitFrameLocal( const uint32_t frameNumber ) const
 {
     _unlockedFrame.waitGE( frameNumber );
+}
+
+uint32_t Pipe::getCurrentFrame() const
+{
+    EQ_TS_THREAD( _pipeThread );
+    return _currentFrame;
 }
 
 uint32_t Pipe::getFinishedFrame() const
@@ -700,6 +731,31 @@ void Pipe::releaseFrameLocal( const uint32_t frameNumber )
                        << std::endl;
 }
 
+bool Pipe::startAsyncRBThread()
+{
+    if( _asyncRBThread->isRunning( ))
+        return true;
+
+    const Windows& windows = getWindows();
+    EQASSERT( !windows.empty( ))
+    if( windows.empty() )
+        return false;
+
+    _asyncRBThread->setWindow( windows[0] );
+    return _asyncRBThread->start();
+}
+
+void Pipe::_stopAsyncRBThread()
+{
+    if( !_asyncRBThread || _asyncRBThread->isStopped( ))
+        return;
+
+    PipeExitAsyncRBThreadPacket packet;
+    send( getLocalNode(), packet );
+
+    _asyncRBThread->join();
+}
+
 //---------------------------------------------------------------------------
 // command handlers
 //---------------------------------------------------------------------------
@@ -834,6 +890,13 @@ bool Pipe::_cmdExitThread( co::Command& command )
 {
     EQASSERT( _thread );
     _thread->_pipe = 0;
+    return true;
+}
+
+bool Pipe::_cmdExitAsyncRBThread( co::Command& )
+{
+    EQASSERT( _asyncRBThread );
+    _asyncRBThread->postStop();
     return true;
 }
 

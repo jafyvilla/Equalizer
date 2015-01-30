@@ -35,6 +35,19 @@
 namespace eqAdmin
 {
 
+inline void addView( eq::admin::Layout* layout )
+{
+    eq::admin::View* view = new eq::admin::View( layout );
+    view->setName( "Closer view" );
+    view->setWall( eq::fabric::Wall( eq::fabric::Vector3f(-.1f,-.1f,-1.f ),
+                                     eq::fabric::Vector3f( .1f,-.1f,-1.f ),
+                                     eq::fabric::Vector3f(-.1f, .1f,-1.f )));
+    view->setViewport(eq::fabric::Viewport(0.2,0.2,0.25,0.25));
+
+    eq::admin::Config* config = layout->getConfig();
+    config->commit();
+}
+
 inline bool addWindow( eq::admin::ServerPtr server, const bool passiveStereo )
 {
     if( !server )
@@ -53,6 +66,7 @@ inline bool addWindow( eq::admin::ServerPtr server, const bool passiveStereo )
     eq::admin::Segment* segment = new eq::admin::Segment( canvas );
     eq::admin::Layout* layout = new eq::admin::Layout( config );
     eq::admin::View* view = new eq::admin::View( layout );
+
     eq::admin::Observer* observer = new eq::admin::Observer( config );
 
     window->setIAttribute( eq::fabric::WindowSettings::IATTR_HINT_DRAWABLE,
@@ -95,9 +109,9 @@ inline bool addWindow( eq::admin::ServerPtr server, const bool passiveStereo )
         window->setName( "Active stereo window" );
 
     view->setObserver( observer );
-    view->setWall( eq::fabric::Wall( eq::fabric::Vector3f(-.4f,-.3f,-1.f ),
-                                     eq::fabric::Vector3f( .4f,-.3f,-1.f ),
-                                     eq::fabric::Vector3f(-.4f, .3f,-1.f )));
+    view->setWall( eq::fabric::Wall( eq::fabric::Vector3f(-.1f,-.1f,-1.f ),
+                                     eq::fabric::Vector3f( .1f,-.1f,-1.f ),
+                                     eq::fabric::Vector3f(-.1f, .1f,-1.f )));
     segment->setChannel( channel );
     canvas->addLayout( layout );
 

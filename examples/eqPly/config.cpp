@@ -1005,9 +1005,24 @@ void Config::_switchLayout( int32_t increment )
 
 void Config::_toggleEqualizer()
 {
-    View* view = _getCurrentView();
-    if ( view )
-        view->toggleEqualizer();
+//    View* view = _getCurrentView();
+//    if ( view )
+//        view->toggleEqualizer();
+
+    const eq::admin::Configs& configs = _getAdminServer()->getConfigs();
+    if( configs.empty( ))
+    {
+        std::cout << "No configs on server, exiting" << std::endl;
+        return;
+    }
+    assert(configs.size() == 1);
+
+    eq::admin::Config* config = configs.front();
+    eq::admin::Layout* layout = config->find< eq::admin::Layout >
+                                   (_currentCanvas->getActiveLayout()->getID());
+    assert(layout);
+
+    eqAdmin::addView(layout);
 }
 
 // Note: real applications would use one tracking device per observer

@@ -100,6 +100,7 @@ namespace fabric
                                                   const uint64_t dirtyBits );
 
         EQFABRIC_INL virtual void notifyDetach(); //!< @internal
+        virtual void notifyViewsDirty() {} //!< @internal
 
         /** @internal */
         EQFABRIC_INL virtual void setDirty( const uint64_t bits );

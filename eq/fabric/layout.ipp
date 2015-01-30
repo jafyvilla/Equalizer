@@ -108,6 +108,7 @@ void Layout< C, L, V >::deserialize( co::DataIStream& is,
             is.deserializeChildren( this, _views, result );
             _views.swap( result );
         }
+        notifyViewsDirty();
     }
 }
 

@@ -73,6 +73,8 @@ private:
         STATE_DELETE,      // next: destructor
     }
         _state;
+
+    void notifyViewsDirty() final;
 };
 
 std::ostream& operator << ( std::ostream& os, const Layout* layout);

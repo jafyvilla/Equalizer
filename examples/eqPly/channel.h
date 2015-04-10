@@ -87,6 +87,11 @@ namespace eqPly
         const FrameData& _getFrameData() const;
         const Model*     _getModel();
 
+        GLuint _fb;
+        GLuint _depthTex;
+        GLuint _normalsTex;
+        GLuint _noiseTex;
+
         const Model* _model;
         eq::uint128_t _modelID;
         uint32_t _frameRestart;

@@ -1,8 +1,8 @@
 
-/* Copyright (c) 2006-2015, Stefan Eilemann <eile@equalizergraphics.com>
- *                          Daniel Nachbaur <danielnachbaur@gmail.com>
- *                          Cedric Stalder <cedric.stalder@gmail.com>
- *                          Tobias Wolf <twolf@access.unizh.ch>
+/* Copyright (c) 2006-2014, Stefan Eilemann <eile@equalizergraphics.com>
+ *               2011-2012, Daniel Nachbaur <danielnachbaur@gmail.com>
+ *                    2010, Cedric Stalder <cedric.stalder@gmail.com>
+ *                    2007, Tobias Wolf <twolf@access.unizh.ch>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -38,6 +38,7 @@
 #include "view.h"
 #include "window.h"
 #include "vertexBufferState.h"
+#include <GL/glut.h>
 
 // light parameters
 static GLfloat lightPosition[] = {0.0f, 0.0f, 1.0f, 0.0f};
@@ -70,7 +71,135 @@ bool Channel::configInit( const eq::uint128_t& initID )
     if( !eq::Channel::configInit( initID ))
         return false;
 
+    const eq::PixelViewport& pvp = getPixelViewport();
+    const eq::Viewport& vp = getViewport();
+
+    const float SCREEN_WIDTH = pvp.w / vp.w;
+    const float SCREEN_HEIGHT = pvp.h / vp.h;
+
+    glEnable(GL_TEXTURE_2D);
+
+    glGenTextures(1, &_normalsTex);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, _normalsTex);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenTextures(1, &_depthTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, _depthTex);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+
+    glGenFramebuffers(1, &_fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, _fb);
+
+    //Attach
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _normalsTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, _depthTex, 0);
+
+    if (GL_FRAMEBUFFER_COMPLETE == glCheckFramebufferStatus(GL_FRAMEBUFFER))
+        printf("FBO %d set up successfully. Yay!\n", _fb);
+    else
+    {
+        printf("FBO %d NOT set up properly!\n", _fb);
+        return false;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // SSAO kernel generation
+    const size_t kernelSize = 32;
+    static GLfloat ssaoKernel[3 * kernelSize];
+
+    for( size_t i = 0; i < kernelSize; i++ )
+    {
+        // Random value in [-1, 1]
+        const GLfloat randX = rand() / (GLfloat) RAND_MAX * 2 - 1;
+        const GLfloat randY = rand() / (GLfloat) RAND_MAX * 2 - 1;
+        // Random value in positive Z axis [0, 1]
+        const GLfloat randZ = rand() / (GLfloat) RAND_MAX;
+
+        eq::Vector3f hemisphereVector( randX, randY, randZ );
+        // Normalize sample positions to fall within the unit hemisphere
+        hemisphereVector.normalize();
+        // Scale sample positions to distribute them within the hemisphere
+        hemisphereVector *= rand() / (GLfloat) RAND_MAX;;
+
+        // Linear interpolation between [0.1, 1.0]
+        float scale = float(i) / float( kernelSize );
+        scale = 0.1f + scale*scale * ( 1.0f - 0.1f );
+        hemisphereVector *= scale;
+
+        ssaoKernel[i * 3 + 0] = hemisphereVector.x();
+        ssaoKernel[i * 3 + 1] = hemisphereVector.y();
+        ssaoKernel[i * 3 + 2] = hemisphereVector.z();
+    }
+
+
+    // Generation of the noise texture to rotate the sample kernel
+    const size_t noiseSide = 4;
+    const size_t rotationNoiseSize = noiseSide * noiseSide;
+    GLfloat rotationNoise[3 * rotationNoiseSize];
+
+    for( size_t i = 0; i < rotationNoiseSize; i++ )
+    {
+        // Random value in [-1, 1]
+        const GLfloat randX = rand() / (GLfloat) RAND_MAX * 2 - 1;
+        const GLfloat randY = rand() / (GLfloat) RAND_MAX * 2 - 1;
+        eq::Vector3f noiseVector( randX, randY, 0 );
+        noiseVector.normalize();
+
+        rotationNoise[3 * i + 0] = noiseVector.x();
+        rotationNoise[3 * i + 1] = noiseVector.y();
+        rotationNoise[3 * i + 2] = noiseVector.z();
+    }
+
+    glGenTextures(1, &_noiseTex);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, _noiseTex);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, noiseSide, noiseSide, 0, GL_RGB, GL_FLOAT, rotationNoise);
+
+    // Send kernel and rotation noise texture to the shader
+    Window* window = static_cast< Window* >( getWindow( ));
+    const GLuint program = window->getState().getProgram( getPipe( ));
+    if( program != VertexBufferState::INVALID )
+    {
+        glUseProgram( program );
+        glUniform3fv( glGetUniformLocation( program, "ssaoKernel" ),
+                      kernelSize, ssaoKernel);
+        glUseProgram( 0 );
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     setNearFar( 0.1f, 10.0f );
+    if( program != VertexBufferState::INVALID )
+    {
+        glUseProgram( program );
+        glUniform1f( glGetUniformLocation( program, "near" ), 0.1f );
+        glUniform1f( glGetUniformLocation( program, "far" ), 10.0f );
+        glUseProgram( 0 );
+    }
     _model = 0;
     _modelID = 0;
     return true;
@@ -119,8 +248,73 @@ void Channel::frameClear( const eq::uint128_t& /*frameID*/ )
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 }
 
+void renderCube()
+{
+    //Multi-colored side - FRONT
+      glBegin(GL_POLYGON);
+      glNormal3f(0,0,1);
+
+      glColor3f( 1.0, 0.0, 0.0 );     glVertex3f(  0.2, -0.2, -0.2 );      // P1 is red
+      glColor3f( 0.0, 1.0, 0.0 );     glVertex3f(  0.2,  0.2, -0.2 );      // P2 is green
+      glColor3f( 0.0, 0.0, 1.0 );     glVertex3f( -0.2,  0.2, -0.2 );      // P3 is blue
+      glColor3f( 1.0, 0.0, 1.0 );     glVertex3f( -0.2, -0.2, -0.2 );      // P4 is purple
+
+      glEnd();
+
+      // White side - BACK
+      glBegin(GL_POLYGON);
+      glNormal3f(0,0,-1);
+      glColor3f(   1.0,  1.0, 1.0 );
+      glVertex3f(  0.2, -0.2, 0.2 );
+      glVertex3f(  0.2,  0.2, 0.2 );
+      glVertex3f( -0.2,  0.2, 0.2 );
+      glVertex3f( -0.2, -0.2, 0.2 );
+      glEnd();
+
+      // Purple side - RIGHT
+      glBegin(GL_POLYGON);
+      glNormal3f(1,0,0);
+      glColor3f(  1.0,  0.0,  1.0 );
+      glVertex3f( 0.2, -0.2, -0.2 );
+      glVertex3f( 0.2,  0.2, -0.2 );
+      glVertex3f( 0.2,  0.2,  0.2 );
+      glVertex3f( 0.2, -0.2,  0.2 );
+      glEnd();
+
+      // Green side - LEFT
+      glBegin(GL_POLYGON);
+      glNormal3f(-1,0,0);
+      glColor3f(   0.0,  1.0,  0.0 );
+      glVertex3f( -0.2, -0.2,  0.2 );
+      glVertex3f( -0.2,  0.2,  0.2 );
+      glVertex3f( -0.2,  0.2, -0.2 );
+      glVertex3f( -0.2, -0.2, -0.2 );
+      glEnd();
+
+      // Blue side - TOP
+      glBegin(GL_POLYGON);
+      glColor3f(   0.0,  0.0,  1.0 );
+      glNormal3f(0,1,0);
+      glVertex3f(  0.2,  0.2,  0.2 );
+      glVertex3f(  0.2,  0.2, -0.2 );
+      glVertex3f( -0.2,  0.2, -0.2 );
+      glVertex3f( -0.2,  0.2,  0.2 );
+      glEnd();
+
+      // Red side - BOTTOM
+      glBegin(GL_POLYGON);
+      glNormal3f(0,-1,0);
+      glColor3f(   1.0,  0.0,  0.0 );
+      glVertex3f(  0.2, -0.2, -0.2 );
+      glVertex3f(  0.2, -0.2,  0.2 );
+      glVertex3f( -0.2, -0.2,  0.2 );
+      glVertex3f( -0.2, -0.2, -0.2 );
+      glEnd();
+}
+
 void Channel::frameDraw( const eq::uint128_t& frameID )
 {
+    glDisable(GL_CULL_FACE);
     if( stopRendering( ))
         return;
 
@@ -133,13 +327,31 @@ void Channel::frameDraw( const eq::uint128_t& frameID )
     const Model* oldModel = _model;
     const Model* model = _getModel();
 
+
     if( oldModel != model )
         state.setFrustumCulling( false ); // create all display lists/VBOs
 
-    if( model )
-        _updateNearFar( model->getBoundingSphere( ));
+//    if( model )
+//        _updateNearFar( model->getBoundingSphere( ));
 
     eq::Channel::frameDraw( frameID ); // Setup OpenGL state
+
+    // Pass 1
+    glBindFramebuffer(GL_FRAMEBUFFER, _fb);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    const eq::Pipe* pipe = getPipe();
+    const GLuint program = state.getProgram( pipe );
+    if( program != VertexBufferState::INVALID )
+    {
+        glUseProgram( program );
+        glUniform1i( glGetUniformLocation( program, "normalsTex" ), 0 );
+        glUniform1i( glGetUniformLocation( program, "depthTex" ), 1 );
+        glUniform1i( glGetUniformLocation( program, "noiseTex" ), 2 );
+
+        glUniform1f( glGetUniformLocation( program, "renderDepth" ), false );
+    }
 
     glLightfv( GL_LIGHT0, GL_POSITION, lightPosition );
     glLightfv( GL_LIGHT0, GL_AMBIENT,  lightAmbient  );
@@ -170,7 +382,34 @@ void Channel::frameDraw( const eq::uint128_t& frameID )
         glColor3f( .75f, .75f, .75f );
 
     if( model )
+    {
+        glPushMatrix();
+            glTranslatef( 0.4, 0.4, 0);
+            renderCube();
+        glPopMatrix();
+        glPushMatrix();
+            glTranslatef( -0.4, -0.4, 0);
+            renderCube();
+        glPopMatrix();
+        glPushMatrix();
+            glTranslatef( 0, 0.4, 0.4);
+            renderCube();
+        glPopMatrix();
+        glPushMatrix();
+            glTranslatef( -0.4, 0, 0.4);
+            renderCube();
+        glPopMatrix();
+        glPushMatrix();
+            glTranslatef( 0.4, 0, -0.4);
+            renderCube();
+        glPopMatrix();
+        glPushMatrix();
+            glTranslatef( 0.4, 0, 0.4);
+            renderCube();
+        glPopMatrix();
+        renderCube();
         _drawModel( model );
+    }
     else
     {
         glNormal3f( 0.f, -1.f, 0.f );
@@ -181,6 +420,47 @@ void Channel::frameDraw( const eq::uint128_t& frameID )
             glVertex3f( -.25f, 0.f, -.25f );
         glEnd();
     }
+
+    glEnable(GL_TEXTURE_2D);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_DEPTH_TEST);
+
+    // Pass 2
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if( program != VertexBufferState::INVALID )
+    {
+        glUseProgram( program );
+        glUniform1i( glGetUniformLocation( program, "renderDepth" ), true );
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, _normalsTex);
+
+    // Draw full screen quad
+    glMatrixMode (GL_MODELVIEW);
+    glPushMatrix ();
+    glLoadIdentity ();
+    glMatrixMode (GL_PROJECTION);
+    glPushMatrix ();
+    glLoadIdentity ();
+    glBegin (GL_QUADS);
+    glTexCoord2f(0, 0);
+    glVertex3i (-1, -1, -1);
+    glTexCoord2f(1, 0);
+    glVertex3i (1, -1, -1);
+    glTexCoord2f(1, 1);
+    glVertex3i (1, 1, -1);
+    glTexCoord2f(0, 1);
+    glVertex3i (-1, 1, -1);
+    glEnd ();
+    glPopMatrix ();
+    glMatrixMode (GL_MODELVIEW);
+    glPopMatrix ();
+
+    if( program != VertexBufferState::INVALID )
+        glUseProgram( 0 );
+
 
     state.setFrustumCulling( true );
     Accum& accum = _accum[ lunchbox::getIndexOfLastBit( getEye()) ];
@@ -788,27 +1068,39 @@ void Channel::_updateNearFar( const triply::BoundingSphere& boundingSphere )
     const eq::Vector3f nearPoint  = view * ( center - front );
     const eq::Vector3f farPoint   = view * ( center + front );
 
+    float zNear, zFar;
     if( useOrtho( ))
     {
         LBASSERTINFO( fabs( farPoint.z() - nearPoint.z() ) >
                       std::numeric_limits< float >::epsilon(),
                       nearPoint << " == " << farPoint );
-        setNearFar( -nearPoint.z(), -farPoint.z() );
+        zNear = -nearPoint.z();
+        zFar = -farPoint.z();
     }
     else
     {
         // estimate minimal value of near plane based on frustum size
         const eq::Frustumf& frustum = getFrustum();
-        const float width  = std::fabs( frustum.right() - frustum.left() );
-        const float height = std::fabs( frustum.top() - frustum.bottom() );
-        const float size   = std::min( width, height );
-        const float minNear = std::fabs( frustum.near_plane() / size * .001f );
+        const float width  = fabs( frustum.right() - frustum.left() );
+        const float height = fabs( frustum.top() - frustum.bottom() );
+        const float size   = LB_MIN( width, height );
+        const float minNear = frustum.near_plane() / size * .001f;
 
-        const float zNear = std::max( minNear, -nearPoint.z() );
-        const float zFar  = std::max( zNear * 2.f, -farPoint.z() );
-
-        setNearFar( zNear, zFar );
+        zNear = LB_MAX( minNear, -nearPoint.z() );
+        zFar  = LB_MAX( zNear * 2.f, -farPoint.z() );
     }
+
+    Window* window = static_cast< Window* >( getWindow( ));
+    const GLuint program = window->getState().getProgram( getPipe( ));
+    if( program != VertexBufferState::INVALID )
+    {
+        glUseProgram( program );
+        glUniform1f( glGetUniformLocation( program, "near" ), zNear );
+        glUniform1f( glGetUniformLocation( program, "far" ), zFar );
+        glUseProgram( 0 );
+    }
+
+    setNearFar( zNear, zFar );
 }
 
 }

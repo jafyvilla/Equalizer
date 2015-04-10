@@ -28,23 +28,30 @@
     
 // Vertex shader for Phong/Blinn-Phong Shading with one light source.
 
-
 varying vec3 normalEye;
 varying vec4 positionEye;
 
+varying mat4 projectionMat;
+varying mat4 invProjectionMat;
 
 void main()
 {
     // transform normal to eye coordinates
-    normalEye = normalize( gl_NormalMatrix * gl_Normal );
-    
+    normalEye = normalize( gl_ModelViewProjectionMatrix * vec4( gl_Normal, 0.0 ));
+
     // transform position to eye coordinates
     positionEye = normalize( gl_ModelViewMatrix * gl_Vertex );
-    
+
+    // Invert projection matrix
+    invProjectionMat = inverse(gl_ProjectionMatrix);
+    projectionMat = gl_ProjectionMatrix;
+
     // transform position to screen coordinates
     //gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
     gl_Position = ftransform();
-    
+
     // pass the vertex colors on to the fragment shader
     gl_FrontColor = gl_Color;
+
+    gl_TexCoord[0] = gl_MultiTexCoord0;
 }
